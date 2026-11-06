@@ -209,6 +209,7 @@ app.get("/llms.txt", c => { const o = new URL(c.req.url).origin;
 // Official MCP Registry HTTP domain auth (public key only; private key kept outside the repo).
 app.get("/.well-known/mcp-registry-auth", c => c.text("v=MCPv1; k=ed25519; p=56bTKyRgncMFPC4++I9H5Y/MJwWPbB9JOg0oXCwaM04="));
 app.get("/.well-known/x402-trust.txt", c => c.text("x402-trust-verification=v1:MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEAbE-ML8D3Oq4076OtdCvcu4p7HNfC7yfPbTyFdhHZ8T6NmpGUW-PCRmgEGjA5_lmWPaibCof7sjSi4zyTvaE8A\n"));
+app.get("/.well-known/402index-verify.txt", c => c.text("23d7fc95124cc83355a77225cb6ea1b5aa61ce251e0517bda56c20e2a45b9fe5"));
 // Discovery documents for crawlers such as x402scan (generated from the route table).
 // CDP facilitator rejects payment payloads whose resource.description is too long (730 chars failed, 479 ok) → keep ≤ 480.
 for (const [k, r] of Object.entries(routes)) if (r.description.length > 480) throw new Error(`route description too long for CDP facilitator: ${k}`);
