@@ -3,9 +3,16 @@
   "name": "dev.workers.nightshift-labs.nightshift-x402/agent-safety",
   "title": "Nightshift Labs: link, token & signature pre-checks",
   "description": "Paid x402 pre-checks for agents: phishing links, Base tokens, EIP-712 permits, calldata, DNS.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "websiteUrl": "https://nightshift-x402.nightshift-labs.workers.dev/llms.txt",
   "remotes": [
-    { "type": "streamable-http", "url": "https://nightshift-x402.nightshift-labs.workers.dev/mcp" }
-  ]
+    {
+      "type": "streamable-http",
+      "url": "https://nightshift-x402.nightshift-labs.workers.dev/mcp"
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/nightshift-labs-ai/nightshift-x402",
+    "source": "github"
+  }
 }
