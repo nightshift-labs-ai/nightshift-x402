@@ -15,7 +15,15 @@ async function logRpc(method, params, url = LOG_RPC) {
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(12000) });
   const j = await r.json(); if (j.error) throw new Error(j.error.message); return j.result;
 }
+const actCache = new Map(); // per-isolate, complete (non-partial) results only, 10 min
 export async function payToActivity(payTo, priceAtomic, days = 3) {
+  const ck = `${String(payTo).toLowerCase()}|${priceAtomic}|${days}`, hit = actCache.get(ck);
+  if (hit && Date.now() - hit.t < 600000) return { ...hit.v, cachedSecondsAgo: Math.round((Date.now() - hit.t) / 1000) };
+  const v = await payToActivityUncached(payTo, priceAtomic, days);
+  if (!v.partial) { if (actCache.size > 500) actCache.clear(); actCache.set(ck, { t: Date.now(), v }); }
+  return v;
+}
+async function payToActivityUncached(payTo, priceAtomic, days) {
   const head = Number(BigInt(await logRpc("eth_blockNumber", [])));
   let bt = 0.2; // seconds per block, measured below (fallback 0.2)
   try { const ts = async n => Number(BigInt((await logRpc("eth_getBlockByNumber", ["0x" + n.toString(16), false])).timestamp));
