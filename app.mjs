@@ -151,7 +151,7 @@ const routes = {
   },
   "GET /v1/x402/preflight": {
     accepts: accepts("$0.005"), mimeType: "application/json",
-    description: "x402 seller preflight: check a paid endpoint BEFORE paying it. Fetches it unpaid, parses the 402 (v2 payment-required header or v1 body) and checks every payment option: scheme, network/testnet, asset is real native USDC on Base, EIP-712 extra.name/version match the token on-chain (prevents invalid_exact_evm_token_name_mismatch), payTo not a burn address (plus contract/tx-count/USDC balance), amount, maxTimeoutSeconds, discovery metadata. Plus seller reputation on-chain: incoming USDC transfers to payTo on Base over the last 3 days (1-7 via ?days=): distinct payers, total USDC, transfers at the advertised price, top-payer share, hours since last payment. Returns verdict ok/caution/fail, issues and the recommended option.",
+    description: "x402 seller preflight: check a paid endpoint BEFORE paying. Probes it unpaid, parses the 402 (v2 header or v1 body) and checks each option: scheme, network, asset is real USDC on Base, EIP-712 name/version match on-chain, payTo not a burn address, amount, timeout, discovery metadata. Plus on-chain seller reputation: USDC payments to payTo over 1-7 days (distinct payers, total, last payment). Returns verdict ok/caution/fail, issues and the recommended option.",
     extensions: declareDiscoveryExtension({
       input: { url: "https://api.agentstools.dev/weather", method: "GET" },
       inputSchema: { type: "object", properties: { url: { type: "string", description: "https URL of the x402-paid endpoint" }, method: { type: "string", enum: ["GET", "POST"], description: "HTTP method to probe (default GET)" }, days: { type: "integer", minimum: 1, maximum: 7, description: "on-chain payer history window in days (default 3)" } }, required: ["url"] },
@@ -210,6 +210,8 @@ app.get("/llms.txt", c => { const o = new URL(c.req.url).origin;
 app.get("/.well-known/mcp-registry-auth", c => c.text("v=MCPv1; k=ed25519; p=56bTKyRgncMFPC4++I9H5Y/MJwWPbB9JOg0oXCwaM04="));
 app.get("/.well-known/x402-trust.txt", c => c.text("x402-trust-verification=v1:MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEAbE-ML8D3Oq4076OtdCvcu4p7HNfC7yfPbTyFdhHZ8T6NmpGUW-PCRmgEGjA5_lmWPaibCof7sjSi4zyTvaE8A\n"));
 // Discovery documents for crawlers such as x402scan (generated from the route table).
+// CDP facilitator rejects payment payloads whose resource.description is too long (730 chars failed, 479 ok) → keep ≤ 480.
+for (const [k, r] of Object.entries(routes)) if (r.description.length > 480) throw new Error(`route description too long for CDP facilitator: ${k}`);
 const paths = Object.keys(routes).map(k => k.split(" ")[1]);
 app.get("/.well-known/x402", c => { const o = new URL(c.req.url).origin; return c.json({ version: 1, resources: paths.map(p => o + p) }); });
 // Open 402 directory manifest (agentinternetruntime.com/spec/agent-json), generated from the route table.
