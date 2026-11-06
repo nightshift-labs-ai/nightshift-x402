@@ -6,8 +6,10 @@ const NETS = { "eip155:8453": ["base", false], base: ["base", false], "eip155:84
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": ["solana", false], solana: ["solana", false], "solana-devnet": ["solana-devnet", true], "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": ["solana-devnet", true] };
 
 // On-chain activity of a seller's payTo: incoming native-USDC transfers on Base over the last `days` days.
-// publicnode caps eth_getLogs at 50k blocks (~27.8 h at 2 s/block) -> one call per chunk, run in parallel.
+// Base blocks are ~0.2 s (measured each call, not assumed). publicnode caps eth_getLogs at 50k blocks (~2.8 h) -> sequential chunks.
+// Workers allow 50 subrequests per request, and latency matters, so the scanned window is capped at MAX_CHUNKS chunks (~11 h); the response states the hours covered.
 const LOG_RPC = "https://base-rpc.publicnode.com", TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const CH = 50000, MAX_CHUNKS = 4, LOG_BUDGET = 12;
 async function logRpc(method, params, url = LOG_RPC) {
   const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "user-agent": "NightshiftLabs/1.0" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }), signal: AbortSignal.timeout(12000) });
@@ -15,36 +17,35 @@ async function logRpc(method, params, url = LOG_RPC) {
 }
 export async function payToActivity(payTo, priceAtomic, days = 3) {
   const head = Number(BigInt(await logRpc("eth_blockNumber", [])));
-  const from = head - days * 43200, CH = 50000, ranges = [];
+  let bt = 0.2; // seconds per block, measured below (fallback 0.2)
+  try { const ts = async n => Number(BigInt((await logRpc("eth_getBlockByNumber", ["0x" + n.toString(16), false])).timestamp));
+    const m = (await ts(head) - await ts(head - 100000)) / 100000; if (m > 0.05 && m < 5) bt = m; } catch {}
+  const wanted = Math.ceil(days * 86400 / bt), span = Math.min(wanted, CH * MAX_CHUNKS), from = head - span + 1, ranges = [];
   for (let b = from; b <= head; b += CH) ranges.push([b, Math.min(b + CH - 1, head)]);
-  let failed = 0, lastErr = null;
+  let failed = 0, lastErr = null, budget = LOG_BUDGET, keyed = globalThis.process?.env?.BASE_RPC_URL;
   const res = [];
-  for (const [a, b] of ranges) { // sequential: shared Cloudflare egress IPs hit publicnode's rate limit when parallel
+  for (const [a, b] of ranges.reverse()) { // newest first; sequential: shared Cloudflare egress IPs hit publicnode's rate limit when parallel
     const q = [{ address: USDC, fromBlock: "0x" + a.toString(16), toBlock: "0x" + b.toString(16), topics: [TRANSFER, null, "0x" + pad(payTo)] }];
     let got = null;
-    const keyed = globalThis.process?.env?.BASE_RPC_URL;
-    if (keyed) try { got = await logRpc("eth_getLogs", q, keyed); } catch (e) { lastErr = "keyed: " + String(e.message || e).slice(0, 80); }
-    if (got == null) try { got = await logRpc("eth_getLogs", q); } catch (e) { lastErr = String(e.message || e).slice(0, 120); }
-    if (got == null) { // fallback: drpc free tier allows 10k-block ranges
-      try { const parts = [];
-        for (let x = a; x <= b; x += 10000) parts.push(await logRpc("eth_getLogs", [{ ...q[0], fromBlock: "0x" + x.toString(16), toBlock: "0x" + Math.min(x + 9999, b).toString(16) }], "https://base.drpc.org"));
-        got = parts.flat();
-      } catch (e) { lastErr += " | drpc: " + String(e.message || e).slice(0, 100); }
-    }
+    if (keyed && budget > 0) { budget--; try { got = await logRpc("eth_getLogs", q, keyed); } catch (e) { keyed = null; lastErr = "keyed: " + String(e.message || e).slice(0, 80); } }
+    if (got == null && budget > 0) { budget--; try { got = await logRpc("eth_getLogs", q); } catch (e) { lastErr = String(e.message || e).slice(0, 120); } }
+    // (s30: drpc / Alchemy free tiers no longer accept useful getLogs ranges; publicnode only, paced to avoid its rate limit)
+    if (got == null && budget > 0) { await new Promise(r => setTimeout(r, 700)); budget--; try { got = await logRpc("eth_getLogs", q); } catch (e) { lastErr = String(e.message || e).slice(0, 120); } }
+    await new Promise(r => setTimeout(r, 200));
     if (got == null) failed++; else res.push(got);
   }
   if (failed === ranges.length) throw new Error(lastErr || "all log queries failed");
-  const partial = failed > 0;
+  const partial = failed > 0, windowHours = +(span * bt / 3600).toFixed(1);
   const logs = res.flat(), payers = new Map(); let total = 0n, atPrice = 0, last = null;
   for (const l of logs) {
     const v = BigInt(l.data), from = "0x" + l.topics[1].slice(26), bn = Number(BigInt(l.blockNumber));
     total += v; payers.set(from, (payers.get(from) || 0) + 1); if (priceAtomic && v === BigInt(priceAtomic)) atPrice++; if (last == null || bn > last) last = bn;
   }
   const top = [...payers.values()].sort((x, y) => y - x)[0] || 0;
-  return { windowDays: days, incomingUsdcTransfers: logs.length, distinctPayers: payers.size, totalUsdc: fmt(total, 6),
+  return { windowDays: days, windowHoursCovered: windowHours, ...(span < wanted ? { windowCapped: true } : {}), incomingUsdcTransfers: logs.length, distinctPayers: payers.size, totalUsdc: fmt(total, 6),
     transfersAtAdvertisedPrice: atPrice, topPayerShare: logs.length ? +(top / logs.length).toFixed(2) : null,
-    lastIncomingHoursAgo: last == null ? null : +(((head - last) * 2) / 3600).toFixed(1), partial, ...(partial ? { failedChunks: failed, chunkError: lastErr } : {}),
-    note: "Incoming native-USDC transfers to payTo on Base (any sender, not only x402 settlements). transfersAtAdvertisedPrice counts transfers equal to this endpoint's price." };
+    lastIncomingHoursAgo: last == null ? null : +(((head - last) * bt) / 3600).toFixed(1), partial, ...(partial ? { failedChunks: failed, hoursActuallyScanned: +(((ranges.length - failed) * CH) * bt / 3600).toFixed(1), chunkError: lastErr } : {}),
+    note: "Incoming native-USDC transfers to payTo on Base (any sender, not only x402 settlements) over windowHoursCovered hours (max ~11 h per call)." + (span < wanted ? " Requested window was longer than the per-call cap." : "") + " transfersAtAdvertisedPrice counts transfers equal to this endpoint's price." };
 }
 
 export async function x402Preflight(u, method = "GET", opts = {}) {
@@ -110,7 +111,7 @@ export async function x402Preflight(u, method = "GET", opts = {}) {
     const pt = best.payTo;
     activity = await payToActivity(pt, best.amountAtomic, opts.days || 3).catch(e => ({ error: "on-chain payer history unavailable right now (public RPC limits), retry later", detail: String(e.message || e).slice(0, 300) }));
     if (activity && !activity.error && activity.distinctPayers === 0 && !activity.partial)
-      warn("low", "NO_RECENT_PAYERS", `payTo received no USDC in the last ${activity.windowDays} days: new or unused seller (not a fault by itself)`);
+      warn("low", "NO_RECENT_PAYERS", `payTo received no USDC in the last ${activity.windowHoursCovered} h: new or unused seller (not a fault by itself)`);
   }
   const sev = issues.map(i => i.severity);
   return { url: u, finalUrl: url.href, status: r.status, redirects: hops, latencyMs, x402: true, x402Version: pr.x402Version ?? null, transport, resource, options, payToActivity: activity, issues,

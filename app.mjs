@@ -154,7 +154,7 @@ const routes = {
     description: "x402 seller preflight: check a paid endpoint BEFORE paying. Probes it unpaid, parses the 402 (v2 header or v1 body) and checks each option: scheme, network, asset is real USDC on Base, EIP-712 name/version match on-chain, payTo not a burn address, amount, timeout, discovery metadata. Plus on-chain seller reputation: USDC payments to payTo over 1-7 days (distinct payers, total, last payment). Returns verdict ok/caution/fail, issues and the recommended option.",
     extensions: declareDiscoveryExtension({
       input: { url: "https://api.agentstools.dev/weather", method: "GET" },
-      inputSchema: { type: "object", properties: { url: { type: "string", description: "https URL of the x402-paid endpoint" }, method: { type: "string", enum: ["GET", "POST"], description: "HTTP method to probe (default GET)" }, days: { type: "integer", minimum: 1, maximum: 7, description: "on-chain payer history window in days (default 3)" } }, required: ["url"] },
+      inputSchema: { type: "object", properties: { url: { type: "string", description: "https URL of the x402-paid endpoint" }, method: { type: "string", enum: ["GET", "POST"], description: "HTTP method to probe (default GET)" }, days: { type: "integer", minimum: 1, maximum: 7, description: "on-chain payer history window in days (default 3; at most ~11 h is scanned per call, see windowHoursCovered)" } }, required: ["url"] },
       output: { example: { status: 402, x402: true, x402Version: 2, transport: "header (x402 v2)", verdict: "ok", recommendedOption: 0, options: [{ scheme: "exact", chain: "base", amountUsd: 0.005, assetIsUsdc: true, assetName: "USD Coin", eip712: { name: "USD Coin", version: "2" }, ok: true, checks: [] }], payToActivity: { windowDays: 3, incomingUsdcTransfers: 50, distinctPayers: 4, totalUsdc: "0.23", transfersAtAdvertisedPrice: 44, topPayerShare: 0.69, lastIncomingHoursAgo: 50.8, partial: false }, issues: [] } },
     }),
   },
@@ -301,7 +301,7 @@ for (const [k, v] of Object.entries(routes)) { const [m, p] = k.split(" ");
     const hit = sampleCache.get(p); if (hit && Date.now() - hit.t < 900000) return c.json(hit.body, 200, { "x-sample": "cached", "cache-control": "public, max-age=900" });
     const [url, init] = sampleReq(m, p, v), r = await api.request(url, init), j = await r.json().catch(() => ({ error: "sample failed" }));
     const out = { sample: true, endpoint: `${m} ${p}`, price: v.accepts[0].price, input: v.extensions?.bazaar?.info?.input?.queryParams ?? v.extensions?.bazaar?.info?.input?.body ?? {}, generatedAt: new Date().toISOString(), output: j };
-    if (r.ok && !j?.error && !j?.payToActivity?.error) sampleCache.set(p, { t: Date.now(), body: out });
+    if (r.ok && !j?.error && !j?.payToActivity?.error && !j?.payToActivity?.partial) sampleCache.set(p, { t: Date.now(), body: out });
     return c.json(out, r.ok ? 200 : 502, { "cache-control": "public, max-age=900" }); }); }
 app.onError((e, c) => { const m = String(e?.message || e); console.error("handler error:", m);
   return /rpc|rate|limit|unavailable|timeout/i.test(m) ? c.json({ error: "upstream Base RPC temporarily unavailable, please retry", detail: m.slice(0, 160) }, 503) : c.json({ error: "internal error" }, 500); });
