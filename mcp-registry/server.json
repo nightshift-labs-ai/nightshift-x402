@@ -1,0 +1,11 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "dev.workers.nightshift-labs.nightshift-x402/agent-safety",
+  "title": "Nightshift Labs: link, token & signature pre-checks",
+  "description": "Paid x402 pre-checks for agents: phishing links, Base tokens, EIP-712 permits, calldata, DNS.",
+  "version": "1.0.0",
+  "websiteUrl": "https://nightshift-x402.nightshift-labs.workers.dev/llms.txt",
+  "remotes": [
+    { "type": "streamable-http", "url": "https://nightshift-x402.nightshift-labs.workers.dev/mcp" }
+  ]
+}

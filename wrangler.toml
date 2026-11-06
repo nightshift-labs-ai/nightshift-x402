@@ -1,0 +1,5 @@
+name = "nightshift-x402"
+main = "worker.mjs"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+# secrets/vars (never commit values): wrangler secret put PAY_TO ; CDP_API_KEY_ID ; CDP_API_KEY_SECRET
