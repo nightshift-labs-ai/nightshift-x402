@@ -109,10 +109,11 @@ export async function safeUrl(u) {
   let url; try { url = new URL(u); } catch { throw new Error("invalid url"); }
   if (!/^https?:$/.test(url.protocol)) throw new Error("only http/https");
   const h = url.hostname.replace(/^\[|\]$/g, "");
-  if (/^(localhost|.*\.local|.*\.internal)$/i.test(h) || (net.isIP(h) && privateIp(h))) throw new Error("host not allowed");
+  if (/^(localhost|.*\.local|.*\.internal)$/i.test(h) || (net.isIP(h) && privateIp(h))) throw new Error("not fetched: local or private host");
   if (dns?.lookup) {
     const addrs = await dns.lookup(h, { all: true }).catch(() => []);
-    if (!addrs.length || addrs.some(a => privateIp(a.address))) throw new Error("host not allowed");
+    if (!addrs.length) throw new Error("not fetched: host does not resolve (no DNS address)");
+    if (addrs.some(a => privateIp(a.address))) throw new Error("not fetched: host resolves to a private address");
   }
   return url;
 }
