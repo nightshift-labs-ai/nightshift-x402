@@ -197,7 +197,7 @@ const routes = {
 };
 
 const app = new Hono();
-app.get("/", c => c.json({ service: "Nightshift Labs API", operator: "Nightshift Labs (an autonomous AI-agent-run business)", payment: "x402, USDC on Base", mcp: new URL(c.req.url).origin + "/mcp",
+app.get("/", c => c.json({ service: "Nightshift Labs API", operator: "Nightshift Labs (an autonomous AI-agent-run business)", source: "https://github.com/nightshift-labs-ai/nightshift-x402", payment: "x402, USDC on Base", mcp: new URL(c.req.url).origin + "/mcp",
   endpoints: Object.entries(routes).map(([k, v]) => ({ route: k, price: v.accepts[0].price, description: v.description })) }));
 app.get("/health", c => c.json({ ok: true }));
 const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#141b2d"/><path d="M40 12a20 20 0 1 0 12 34A16 16 0 0 1 40 12z" fill="#ffd166"/><circle cx="20" cy="18" r="2" fill="#fff"/><circle cx="14" cy="34" r="1.5" fill="#fff"/></svg>`;
@@ -205,7 +205,7 @@ for (const f of ["/favicon.ico", "/favicon.svg"]) app.get(f, c => c.body(FAVICON
 app.get("/llms.txt", c => { const o = new URL(c.req.url).origin;
   return c.text(`# Nightshift Labs API\n\n> Pay-per-call utilities for AI agents: Base token safety, prices, portfolios, transaction, calldata and EIP-712 signature checks, gas, ENS, domain/link phishing checks, DNS lookup, website security-headers audit, web page extraction. Payment: x402 (USDC on Base), no account or API key.\n\nOperated by Nightshift Labs, an autonomous AI-agent-run business. Contact: nightshiftlabs-api@agentmail.to\n\n## Endpoints (GET = query parameters, POST = JSON body; unpaid requests get HTTP 402 with x402 payment requirements)\n\n` +
     Object.entries(routes).map(([k, v]) => `- ${k.split(" ")[0]} [${k.split(" ")[1]}](${o}${k.split(" ")[1]}) (${v.accepts[0].price}): ${v.description}`).join("\n") +
-    `\n\n## Free samples\n\n- [All samples](${o}/samples): real output of every endpoint for its example input, e.g. ${o}/sample/v1/web/link-check\n\n## MCP\n\n- Paid MCP server (Streamable HTTP): ${o}/mcp — the same endpoints as MCP tools (e.g. web_link_check, evm_typed_data_check), paid with x402 over MCP (_meta \"x402/payment\", e.g. @x402/mcp client).\n\n## Machine-readable\n\n- [OpenAPI](${o}/openapi.json)\n- [x402 resource list](${o}/.well-known/x402)\n`); });
+    `\n\n## Source\n\n- Open source (MIT): https://github.com/nightshift-labs-ai/nightshift-x402\n\n## Free samples\n\n- [All samples](${o}/samples): real output of every endpoint for its example input, e.g. ${o}/sample/v1/web/link-check\n\n## MCP\n\n- Paid MCP server (Streamable HTTP): ${o}/mcp — the same endpoints as MCP tools (e.g. web_link_check, evm_typed_data_check), paid with x402 over MCP (_meta \"x402/payment\", e.g. @x402/mcp client).\n\n## Machine-readable\n\n- [OpenAPI](${o}/openapi.json)\n- [x402 resource list](${o}/.well-known/x402)\n`); });
 // Official MCP Registry HTTP domain auth (public key only; private key kept outside the repo).
 app.get("/.well-known/mcp-registry-auth", c => c.text("v=MCPv1; k=ed25519; p=56bTKyRgncMFPC4++I9H5Y/MJwWPbB9JOg0oXCwaM04="));
 app.get("/.well-known/x402-trust.txt", c => c.text("x402-trust-verification=v1:MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEAbE-ML8D3Oq4076OtdCvcu4p7HNfC7yfPbTyFdhHZ8T6NmpGUW-PCRmgEGjA5_lmWPaibCof7sjSi4zyTvaE8A\n"));
