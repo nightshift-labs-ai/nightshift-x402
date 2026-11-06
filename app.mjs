@@ -151,7 +151,7 @@ const routes = {
   },
   "GET /v1/x402/preflight": {
     accepts: accepts("$0.005"), mimeType: "application/json",
-    description: "x402 seller preflight: check a paid endpoint BEFORE paying. Probes it unpaid, parses the 402 (v2 header or v1 body) and checks each option: scheme, network, asset is real USDC on Base, EIP-712 name/version match on-chain, payTo not a burn address, amount, timeout, discovery metadata. Plus on-chain seller reputation: USDC payments to payTo over 1-7 days (distinct payers, total, last payment). Returns verdict ok/caution/fail, issues and the recommended option.",
+    description: "x402 seller preflight: check a paid endpoint BEFORE paying. Probes it unpaid, parses the 402 (v2 header or v1 body) and checks each option: scheme, network, asset is real USDC on Base, EIP-712 name/version match on-chain, payTo not a burn address, amount, timeout, discovery metadata. Plus on-chain seller reputation: recent USDC payments to payTo (last ~11 h: distinct payers, total, last payment). Returns verdict ok/caution/fail, issues and the recommended option.",
     extensions: declareDiscoveryExtension({
       input: { url: "https://api.agentstools.dev/weather", method: "GET" },
       inputSchema: { type: "object", properties: { url: { type: "string", description: "https URL of the x402-paid endpoint" }, method: { type: "string", enum: ["GET", "POST"], description: "HTTP method to probe (default GET)" }, days: { type: "integer", minimum: 1, maximum: 7, description: "on-chain payer history window in days (default 3; at most ~11 h is scanned per call, see windowHoursCovered)" } }, required: ["url"] },
