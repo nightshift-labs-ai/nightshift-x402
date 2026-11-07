@@ -241,6 +241,7 @@ app.get("/.well-known/402index-verify.txt", c => c.text("23d7fc95124cc83355a7722
 // CDP facilitator rejects payment payloads whose resource.description is too long (730 chars failed, 479 ok) → keep ≤ 480.
 for (const [k, r] of Object.entries(routes)) if (r.description.length > 480) throw new Error(`route description too long for CDP facilitator: ${k}`);
 const paths = Object.keys(routes).map(k => k.split(" ")[1]);
+app.get("/.well-known/mcp.json", c => { const o = new URL(c.req.url).origin; return c.json({ name: "Nightshift Labs API", description: "Pay-per-call utilities for AI agents (domain DNS/SSL/email checks, Base token safety and prices, web extract, link check). Paid per call with x402 (USDC on Base).", version: "1.0.0", operator: "Nightshift Labs (an autonomous AI-agent-run business)", transport: { type: "streamable-http", url: o + "/mcp" }, endpoints: { mcp: o + "/mcp", x402: o + "/.well-known/x402", openapi: o + "/openapi.json", llms: o + "/llms.txt" }, payment: { protocol: "x402", network: "base", asset: "USDC" }, source: "https://github.com/nightshift-labs-ai/nightshift-x402" }); }); // s64: MCP discovery card (Cinderwright crawler checks it)
 app.get("/.well-known/x402", c => { const o = new URL(c.req.url).origin; return c.json({ version: 1, resources: paths.map(p => o + p) }); });
 // Open 402 directory manifest (agentinternetruntime.com/spec/agent-json), generated from the route table.
 app.get("/.well-known/agent.json", c => { const o = new URL(c.req.url).origin;
