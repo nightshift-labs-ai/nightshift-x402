@@ -618,3 +618,69 @@ export async function headersAudit(u) {
   return { url: u, finalUrl: url.href, status: r.status, redirects: hops, https, score, grade: score >= 90 ? "A" : score >= 75 ? "B" : score >= 60 ? "C" : score >= 40 ? "D" : "F",
     failed: checks.filter(c => !c.ok).map(c => `${c.severity.toUpperCase()}: ${c.header} — ${c.note}`), checks, cookies };
 }
+
+// ---- DNS for several names in one call (Workers subrequest budget: names × types ≤ 48) ----
+export async function dnsBatch(names, types = ["A", "AAAA", "MX", "NS"]) {
+  const results = await Promise.all(names.map(n => dnsLookup(n, types).then(r => ({ name: n, status: r.status, dnssecValidated: r.dnssecValidated, records: r.records, hints: r.hints }))
+    .catch(e => ({ name: n, error: "lookup failed: " + String(e.message || e).slice(0, 80) }))));
+  return { count: results.length, types, results,
+    summary: { resolving: results.filter(r => r.status === "NOERROR" && (r.records?.A || r.records?.AAAA || r.records?.CNAME)).map(r => r.name),
+      nxdomain: results.filter(r => r.status === "NXDOMAIN").map(r => r.name), withMx: results.filter(r => r.records?.MX).map(r => r.name), errors: results.filter(r => r.error).map(r => r.name) } };
+}
+
+// ---- TLS certificate check: live HTTPS handshake from Cloudflare + Certificate Transparency logs (SSLMate Cert Spotter) ----
+const ctMemo = new Map();
+async function ctIssuances(domain) {
+  const h = ctMemo.get(domain); if (h && Date.now() - h.t < 3600e3) return h.v;
+  const r = await fetch(`https://api.certspotter.com/v1/issuances?domain=${encodeURIComponent(domain)}&expand=dns_names&expand=issuer`, { headers: { "user-agent": "NightshiftLabs-API/1.0 (+x402)" }, signal: AbortSignal.timeout(12000) });
+  if (r.status === 429) throw new Error("CT log service rate-limited, retry later");
+  if (!r.ok) throw new Error("CT log lookup HTTP " + r.status);
+  const v = await r.json(); ctMemo.set(domain, { t: Date.now(), v }); if (ctMemo.size > 500) ctMemo.delete(ctMemo.keys().next().value); return v;
+}
+const covers = (pat, host) => pat === host || (pat.startsWith("*.") && host.endsWith(pat.slice(1)) && host.split(".").length === pat.split(".").length);
+export async function sslCheck(host) {
+  host = host.toLowerCase();
+  const labels = host.split("."), parent = labels.length > 2 ? labels.slice(1).join(".") : null;
+  const t0 = Date.now();
+  const live = fetch(`https://${host}/`, { method: "HEAD", redirect: "manual", headers: { "user-agent": "Mozilla/5.0 (compatible; NightshiftLabsBot/1.0)" }, signal: AbortSignal.timeout(10000) })
+    .then(r => ({ ok: true, status: r.status, ms: Date.now() - t0, hsts: r.headers.get("strict-transport-security") }))
+    .catch(e => ({ ok: false, error: String(e.message || e).slice(0, 160) }));
+  let ct = [], ctError = null;
+  try { const lists = await Promise.all([ctIssuances(host), parent ? ctIssuances(parent).catch(() => []) : []]); const seen = new Set();
+    for (const c of lists.flat()) if (!seen.has(c.id) && (c.dns_names || []).some(n => covers(n.toLowerCase(), host))) { seen.add(c.id); ct.push(c); } }
+  catch (e) { ctError = String(e.message || e).slice(0, 160); }
+  const now = Date.now(), dayMs = 864e5;
+  const valid = ct.filter(c => !c.revoked && Date.parse(c.not_before) <= now && Date.parse(c.not_after) > now).sort((a, b) => Date.parse(b.not_after) - Date.parse(a.not_after));
+  const fmtC = c => ({ issuer: c.issuer?.friendly_name || c.issuer?.name || null, issuerDn: c.issuer?.name || null, notBefore: c.not_before, notAfter: c.not_after,
+    daysLeft: Math.floor((Date.parse(c.not_after) - now) / dayMs), validityDays: Math.round((Date.parse(c.not_after) - Date.parse(c.not_before)) / dayMs),
+    names: (c.dns_names || []).slice(0, 25), nameCount: (c.dns_names || []).length, wildcard: (c.dns_names || []).some(n => n.startsWith("*.")), sha256: c.cert_sha256 });
+  const https = await live, flags = [];
+  if (!https.ok) flags.push("HTTPS_HANDSHAKE_OR_CONNECT_FAILED");
+  if (!ctError && !valid.length) flags.push("NO_VALID_CERT_IN_CT_LOGS");
+  const newest = valid[0];
+  if (newest && newest.not_after && Date.parse(newest.not_after) - now < 14 * dayMs) flags.push("LATEST_CERT_EXPIRES_WITHIN_14_DAYS");
+  else if (newest && Date.parse(newest.not_after) - now < 30 * dayMs) flags.push("LATEST_CERT_EXPIRES_WITHIN_30_DAYS");
+  if (newest && Date.parse(newest.not_before) > now - 2 * dayMs) flags.push("CERT_ISSUED_LAST_48H");
+  const issuers = [...new Set(valid.map(c => c.issuer?.friendly_name).filter(Boolean))];
+  if (issuers.length > 1) flags.push("MULTIPLE_ACTIVE_ISSUERS");
+  return { host, https: https.ok ? { reachable: true, chainTrusted: true, status: https.status, responseMs: https.ms, hsts: https.hsts || null } : { reachable: false, error: https.error },
+    latestCertificate: newest ? fmtC(newest) : null, activeCertificates: valid.length, activeIssuers: issuers,
+    otherActive: valid.slice(1, 5).map(fmtC).map(({ names, ...r }) => r), ctError, flags,
+    note: "chainTrusted = Cloudflare's HTTPS client completed a verified TLS handshake. Certificate details come from public Certificate Transparency logs (newest currently-valid cert covering the host; the server may still serve an older valid one)." };
+}
+
+// ---- One-call domain overview: registration + DNS/email security + HTTPS/TLS ----
+export async function domainOverview(domain) {
+  domain = domain.toLowerCase();
+  const [w, e, s] = await Promise.all([domainWhois(domain).catch(x => ({ error: String(x.message || x) })), domainCheck(domain).catch(x => ({ error: String(x.message || x) })), sslCheck(domain).catch(x => ({ error: String(x.message || x) }))]);
+  const flags = [...(w.flags || []), ...(e.issues || []).map(i => i.split(":")[0]), ...(s.flags || [])];
+  const incomplete = [w.error || w.rdapAvailable === false ? "registration" : null, e.error ? "dns_email" : null, s.error || s.ctError ? "certificate_transparency" : null].filter(Boolean);
+  const risk = ["NEW_DOMAIN_UNDER_30_DAYS", "PROBLEM_STATUS", "HTTPS_HANDSHAKE_OR_CONNECT_FAILED", "NO_VALID_CERT_IN_CT_LOGS", "LATEST_CERT_EXPIRES_WITHIN_14_DAYS", "NO_A_RECORD"].filter(f => flags.includes(f));
+  return { domain,
+    registration: w.error ? { error: w.error } : { rdapAvailable: w.rdapAvailable, registered: w.registered ?? null, ageDays: w.ageDays ?? null, expires: w.expires ?? null, expiresInDays: w.expiresInDays ?? null, registrar: w.registrar ?? null, dnssec: w.dnssec ?? null },
+    dns: e.error ? { error: e.error } : { a: e.a, aaaa: e.aaaa, ns: e.ns, mx: e.mx, caa: e.caa },
+    email: e.error ? { error: e.error } : { spf: e.spf, dmarcPolicy: e.dmarcPolicy, emailSecurityScore: e.emailSecurityScore, issues: e.issues },
+    tls: s.error ? { error: s.error } : { httpsReachable: s.https.reachable, httpStatus: s.https.status ?? null, hsts: !!s.https.hsts, issuer: s.latestCertificate?.issuer ?? null, certNotAfter: s.latestCertificate?.notAfter ?? null, certDaysLeft: s.latestCertificate?.daysLeft ?? null },
+    flags: [...new Set(flags)], attention: risk, incomplete,
+    verdict: risk.length ? "check" : incomplete.length ? "incomplete" : "ok" };
+}

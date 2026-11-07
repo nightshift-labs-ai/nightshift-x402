@@ -10,7 +10,7 @@ import { mountMcp } from "./mcp.mjs";
 import { x402Preflight } from "./preflight.mjs";
 import { walletScreen } from "./wallet.mjs";
 import { brandExtract } from "./brand.mjs";
-import { tokenCheck, balance, extract, isAddr, txDecode, isHash, domainCheck, isDomain, decodeCalldata, isHex, gas, resolveName, isEnsName, domainWhois, portfolio, urlCheck, tokenPrice, typedDataCheck, parseTypedData, dnsLookup, headersAudit } from "./lib.mjs";
+import { tokenCheck, balance, extract, isAddr, txDecode, isHash, domainCheck, isDomain, decodeCalldata, isHex, gas, resolveName, isEnsName, domainWhois, portfolio, urlCheck, tokenPrice, typedDataCheck, parseTypedData, dnsLookup, headersAudit, dnsBatch, sslCheck, domainOverview } from "./lib.mjs";
 
 export function createApp(env) {
 const PAY_TO = env.PAY_TO;
@@ -27,7 +27,7 @@ const resourceServer = new x402ResourceServer(new HTTPFacilitatorClient(facilita
 const accepts = price => [{ scheme: "exact", price, network: NETWORK, payTo: PAY_TO, maxTimeoutSeconds: 60 }];
 const routes = {
   "GET /v1/base/token-check": {
-    accepts: accepts("$0.01"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Base token safety pre-check: name/symbol/decimals/supply, owner and renounce status, proxy implementation, privileged functions found in bytecode (mint, blacklist, pause, fee setters, upgrade) and a heuristic risk level. Call before buying or accepting an unknown token on Base.",
     extensions: declareDiscoveryExtension({
       input: { address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },
@@ -36,7 +36,7 @@ const routes = {
     }),
   },
   "GET /v1/base/token-price": {
-    accepts: accepts("$0.005"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Live USD price of any ERC-20 token on Base from on-chain DEX quotes (Uniswap v3 0.05/0.3/1% pools and Aerodrome, against USDC and WETH; WETH converted with Chainlink ETH/USD). Returns the best executable route, every route's price, the price impact of selling $1,000, and flags for thin liquidity or disagreeing pools.",
     extensions: declareDiscoveryExtension({
       input: { address: "0x940181a94A35A4569E4529A3CDfB74e38FD98631" },
@@ -45,7 +45,7 @@ const routes = {
     }),
   },
   "GET /v1/base/balance": {
-    accepts: accepts("$0.005"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Base wallet balances: native ETH and USDC for any address, with the block number they were read at.",
     extensions: declareDiscoveryExtension({
       input: { address: "0x4200000000000000000000000000000000000006" },
@@ -54,7 +54,7 @@ const routes = {
     }),
   },
   "GET /v1/base/tx": {
-    accepts: accepts("$0.005"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Decode a Base transaction: status, block time, from/to, ETH value, fee, method selector and every ERC-20 transfer with symbol and human amount. Flags fake look-alike tokens (address-poisoning, e.g. a fake USDC with homoglyph characters).",
     extensions: declareDiscoveryExtension({
       input: { hash: "0x0f46ecb16e85da8c24f57749d1b1b71e6904ccb9df741e230070338fe5678e9e" },
@@ -63,7 +63,7 @@ const routes = {
     }),
   },
   "GET /v1/domain/email-check": {
-    accepts: accepts("$0.005"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Domain DNS and email-security check: A/AAAA, NS, MX (incl. null MX), SPF, DMARC policy, CAA, plus a list of issues and a 0-100 email security score. Use before sending email to or trusting a domain.",
     extensions: declareDiscoveryExtension({
       input: { domain: "github.com" },
@@ -72,7 +72,7 @@ const routes = {
     }),
   },
   "GET /v1/evm/decode-calldata": {
-    accepts: accepts("$0.005"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Decode EVM transaction calldata before signing: finds the function signature (signature DB, verified by re-encoding to reject selector collisions), decodes all arguments, expands multicall batches, and warns about unlimited token approvals, approve-all-NFTs, permits, ownership changes and upgrades. Works for any EVM chain.",
     extensions: declareDiscoveryExtension({
       input: { data: "0x095ea7b3000000000000000000000000000000000022d473030f116ddee9f6b43ac78ba3ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" },
@@ -81,7 +81,7 @@ const routes = {
     }),
   },
   "POST /v1/evm/typed-data-check": {
-    accepts: accepts("$0.01"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Check an EIP-712 signature request BEFORE signing (the JSON passed to eth_signTypedData_v4): detects ERC-2612 Permit, DAI permit, Uniswap Permit2 (allowance + transfer) and Seaport orders, explains in one line what the signature grants, and flags drainer patterns: unlimited allowances, spender that is a plain wallet (EOA, checked on Base), zero-payment NFT listings, bulk listings, never-expiring grants. Returns risk (low/medium/high), grants, warnings and the EIP-712 digest.",
     extensions: declareDiscoveryExtension({
       method: "POST", bodyType: "json",
@@ -96,7 +96,7 @@ const routes = {
     }),
   },
   "GET /v1/base/gas": {
-    accepts: accepts("$0.005"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Base gas snapshot: gas price, base fee, priority fee, 10-block base-fee trend, ETH/USD (Chainlink) and estimated USD cost of an ETH transfer, ERC-20 transfer, swap and contract deploy right now.",
     extensions: declareDiscoveryExtension({
       input: { gasLimit: "250000" },
@@ -105,7 +105,7 @@ const routes = {
     }),
   },
   "GET /v1/ens/resolve": {
-    accepts: accepts("$0.005"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Resolve ENS and Basenames (name.eth, name.base.eth): name → address, or address → primary name with forward verification, plus text records (avatar, description, url, twitter, github, email).",
     extensions: declareDiscoveryExtension({
       input: { q: "vitalik.eth" },
@@ -114,7 +114,7 @@ const routes = {
     }),
   },
   "GET /v1/domain/whois": {
-    accepts: accepts("$0.005"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Domain registration lookup (RDAP, the official WHOIS successor): registration date and age in days, expiry, registrar and its abuse email, EPP status, nameservers, DNSSEC, and flags for brand-new (<30 days) or young domains, punycode/IDN names and expiring domains. Use to vet links, senders and counterparties (phishing domains are usually days old).",
     extensions: declareDiscoveryExtension({
       input: { domain: "github.com" },
@@ -131,8 +131,35 @@ const routes = {
       output: { example: { name: "github.com", status: "NOERROR", dnssecValidated: false, records: { A: [{ data: "140.82.121.3", ttl: 46 }], MX: [{ data: "0 github-com.mail.protection.outlook.com.", ttl: 300 }] }, hints: { hasMx: true, spf: "v=spf1 ip4:192.30.252.0/22 include:_netblocks.google.com … ~all", caaIssuers: [], verificationTokens: ["adobe-idp-site-verification"] } } },
     }),
   },
+  "GET /v1/domain/dns-batch": {
+    accepts: accepts("$0.003"), mimeType: "application/json",
+    description: "DNS lookup for up to 12 domains in ONE paid call: A, AAAA, MX and NS by default (or the types you ask for), NXDOMAIN status, DNSSEC validation and SPF/verification hints per name, plus a summary of which names resolve, which are NXDOMAIN and which have MX. Resolved via DNS-over-HTTPS. names x types must be <= 48.",
+    extensions: declareDiscoveryExtension({
+      input: { names: "github.com,example.com,nonexistent-domain-xyz123.com" },
+      inputSchema: { type: "object", properties: { names: { type: "string", description: "comma list of 1-12 domain/host names" }, types: { type: "string", description: "optional comma list of A,AAAA,CNAME,MX,TXT,NS,CAA,SOA (default A,AAAA,MX,NS)" } }, required: ["names"] },
+      output: { example: { count: 3, types: ["A", "AAAA", "MX", "NS"], results: [{ name: "github.com", status: "NOERROR", records: { A: [{ data: "140.82.112.3", ttl: 60 }] } }], summary: { resolving: ["github.com", "example.com"], nxdomain: ["nonexistent-domain-xyz123.com"], withMx: ["github.com"], errors: [] } } },
+    }),
+  },
+  "GET /v1/domain/ssl": {
+    accepts: accepts("$0.003"), mimeType: "application/json",
+    description: "TLS/SSL certificate check for a host: live verified HTTPS handshake (reachable, status, HSTS) plus the newest valid certificate from public Certificate Transparency logs: issuer, notBefore/notAfter, days left, covered names, wildcard, other active certs. Flags certs expiring within 14/30 days, missing certs, failed handshakes, very new certs and mixed issuers. Use for uptime/expiry monitoring or to vet a site.",
+    extensions: declareDiscoveryExtension({
+      input: { host: "github.com" },
+      inputSchema: { type: "object", properties: { host: { type: "string", description: "host name, e.g. github.com or api.example.com" } }, required: ["host"] },
+      output: { example: { host: "github.com", https: { reachable: true, chainTrusted: true, status: 200, hsts: "max-age=31536000; includeSubdomains; preload" }, latestCertificate: { issuer: "Sectigo", notAfter: "2027-01-11T23:59:59Z", daysLeft: 65, names: ["github.com", "www.github.com"], wildcard: false }, activeCertificates: 2, flags: [] } },
+    }),
+  },
+  "GET /v1/domain/overview": {
+    accepts: accepts("$0.003"), mimeType: "application/json",
+    description: "One-call domain overview: registration (RDAP age, expiry, registrar, DNSSEC), DNS (A/AAAA/NS/MX/CAA), email security (SPF, DMARC policy, 0-100 score, issues) and HTTPS/TLS (reachable, HSTS, cert issuer and days left), with merged flags, an 'attention' list and a verdict: ok, check (risk flags found) or incomplete (a data source did not answer; listed in 'incomplete'). Use to vet or monitor a domain with a single paid request.",
+    extensions: declareDiscoveryExtension({
+      input: { domain: "github.com" },
+      inputSchema: { type: "object", properties: { domain: { type: "string", description: "domain name, e.g. example.com" } }, required: ["domain"] },
+      output: { example: { domain: "github.com", registration: { ageDays: 6967, expires: "2028-10-09T18:20:50Z", registrar: "MarkMonitor Inc." }, email: { dmarcPolicy: "reject", emailSecurityScore: 100 }, tls: { httpsReachable: true, hsts: true, issuer: "Sectigo", certDaysLeft: 65 }, flags: [], attention: [], incomplete: [], verdict: "ok" } },
+    }),
+  },
   "GET /v1/web/security-headers": {
-    accepts: accepts("$0.005"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Website security-headers audit: follows redirects (SSRF-guarded) and grades the final page A–F on HSTS, Content-Security-Policy (script-src unsafe-inline/eval/wildcards), clickjacking protection, nosniff, Referrer-Policy, Permissions-Policy, COOP, version-leaking Server/X-Powered-By headers and cookie Secure/HttpOnly/SameSite flags. Returns a score, a list of failed checks with severity, and every header value.",
     extensions: declareDiscoveryExtension({
       input: { url: "https://github.com" },
@@ -141,7 +168,7 @@ const routes = {
     }),
   },
   "GET /v1/base/portfolio": {
-    accepts: accepts("$0.01"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Base wallet portfolio: ETH plus 12 major Base tokens (USDC, USDbC, DAI, EURC, WETH, cbETH, wstETH, cbBTC, AERO, DEGEN, VIRTUAL, BRETT) with non-zero balances, USD values from Chainlink ETH/USD and BTC/USD feeds, and a total.",
     extensions: declareDiscoveryExtension({
       input: { address: "0x3304E22DDaa22bCdC5fCa2269b418046aE7b566A" },
@@ -150,7 +177,7 @@ const routes = {
     }),
   },
   "GET /v1/x402/preflight": {
-    accepts: accepts("$0.005"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "x402 seller preflight: check a paid endpoint BEFORE paying. Probes it unpaid, parses the 402 (v2 header or v1 body) and checks each option: scheme, network, asset is real USDC on Base, EIP-712 name/version match on-chain, payTo not a burn address, amount, timeout, discovery metadata. Plus on-chain seller reputation: recent USDC payments to payTo (last ~11 h: distinct payers, total, last payment). Returns verdict ok/caution/fail, issues and the recommended option.",
     extensions: declareDiscoveryExtension({
       input: { url: "https://api.agentstools.dev/weather", method: "GET" },
@@ -159,7 +186,7 @@ const routes = {
     }),
   },
   "GET /v1/wallet/screen": {
-    accepts: accepts("$0.005"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Wallet / counterparty screen before you send funds or accept a payer: OFAC SDN sanctioned-address check (EVM list, refreshed from the 0xB10C OFAC dataset), address type (EOA, EIP-7702 delegated, contract, token contract), Base and Ethereum tx counts, ETH/USDC balances on Base, burn-address detection and an optional address-poisoning look-alike check against the address you expected (same first/last 4 hex). Verdict block/high_risk/caution/no_red_flags.",
     extensions: declareDiscoveryExtension({
       input: { address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", expected: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" },
@@ -168,7 +195,7 @@ const routes = {
     }),
   },
   "GET /v1/web/brand": {
-    accepts: accepts("$0.01"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Brand kit from a website: site name, logo candidates (JSON-LD logo, header/home-link image, inline SVG logo, apple-touch-icon/favicons, og:image), theme-color, CSS brand variables (--primary/--brand/--accent), dominant colors ranked by CSS frequency (non-neutral first), fonts (Google Fonts + CSS font families, system fonts removed) and social profile links. No rendering; flags bot-protected pages.",
     extensions: declareDiscoveryExtension({
       input: { url: "https://stripe.com" },
@@ -177,7 +204,7 @@ const routes = {
     }),
   },
   "GET /v1/web/link-check": {
-    accepts: accepts("$0.01"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Link / URL phishing pre-check before an agent opens, clicks or forwards a link: brand look-alikes (typosquats, homoglyphs, brand in subdomain), punycode and mixed-script hosts, credentials-in-URL tricks, high-abuse TLDs, domain age via RDAP (new domains flagged), DNS resolution and the full redirect chain. Returns a verdict, a 0-100 risk score and the flags.",
     extensions: declareDiscoveryExtension({
       input: { url: "https://login-coinbase.secure-verify.xyz/a" },
@@ -186,7 +213,7 @@ const routes = {
     }),
   },
   "GET /v1/web/extract": {
-    accepts: accepts("$0.005"), mimeType: "application/json",
+    accepts: accepts("$0.003"), mimeType: "application/json",
     description: "Fetch any public web page and return clean Markdown of the main content plus title, meta description, word count and absolute links. Strips scripts, navigation and boilerplate. Good for feeding pages to an LLM.",
     extensions: declareDiscoveryExtension({
       input: { url: "https://example.com", maxChars: "20000" },
@@ -203,7 +230,7 @@ app.get("/health", c => c.json({ ok: true }));
 const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#141b2d"/><path d="M40 12a20 20 0 1 0 12 34A16 16 0 0 1 40 12z" fill="#ffd166"/><circle cx="20" cy="18" r="2" fill="#fff"/><circle cx="14" cy="34" r="1.5" fill="#fff"/></svg>`;
 for (const f of ["/favicon.ico", "/favicon.svg"]) app.get(f, c => c.body(FAVICON, 200, { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" }));
 app.get("/llms.txt", c => { const o = new URL(c.req.url).origin;
-  return c.text(`# Nightshift Labs API\n\n> Pay-per-call utilities for AI agents: Base token safety, prices, portfolios, transaction, calldata and EIP-712 signature checks, gas, ENS, domain/link phishing checks, DNS lookup, website security-headers audit, web page extraction. Payment: x402 (USDC on Base), no account or API key.\n\nOperated by Nightshift Labs, an autonomous AI-agent-run business. Contact: nightshiftlabs-api@agentmail.to\n\n## Endpoints (GET = query parameters, POST = JSON body; unpaid requests get HTTP 402 with x402 payment requirements)\n\n` +
+  return c.text(`# Nightshift Labs API\n\n> Pay-per-call utilities for AI agents: Base token safety, prices, portfolios, transaction, calldata and EIP-712 signature checks, gas, ENS, domain/link phishing checks, DNS (single and batch), TLS certificate checks, one-call domain overview, website security-headers audit, web page extraction. Payment: x402 (USDC on Base), no account or API key.\n\nOperated by Nightshift Labs, an autonomous AI-agent-run business. Contact: nightshiftlabs-api@agentmail.to\n\n## Endpoints (GET = query parameters, POST = JSON body; unpaid requests get HTTP 402 with x402 payment requirements)\n\n` +
     Object.entries(routes).map(([k, v]) => `- ${k.split(" ")[0]} [${k.split(" ")[1]}](${o}${k.split(" ")[1]}) (${v.accepts[0].price}): ${v.description}`).join("\n") +
     `\n\n## Source\n\n- Open source (MIT): https://github.com/nightshift-labs-ai/nightshift-x402\n\n## Free samples\n\n- [All samples](${o}/samples): real output of every endpoint for its example input, e.g. ${o}/sample/v1/web/link-check\n\n## MCP\n\n- Paid MCP server (Streamable HTTP): ${o}/mcp — the same endpoints as MCP tools (e.g. web_link_check, evm_typed_data_check), paid with x402 over MCP (_meta \"x402/payment\", e.g. @x402/mcp client).\n\n## Machine-readable\n\n- [OpenAPI](${o}/openapi.json)\n- [x402 resource list](${o}/.well-known/x402)\n`); });
 // Official MCP Registry HTTP domain auth (public key only; private key kept outside the repo).
@@ -263,6 +290,14 @@ api.get("/v1/domain/dns", async c => { const d = (c.req.query("name") || "").tri
   const ALLOWED = ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "CAA", "SOA"], t = (c.req.query("types") || "").toUpperCase().split(",").map(x => x.trim()).filter(Boolean);
   if (t.some(x => !ALLOWED.includes(x))) return bad(c, "types must be a comma list of " + ALLOWED.join(","));
   return c.json(await dnsLookup(d, t.length ? [...new Set(t)] : undefined)); });
+api.get("/v1/domain/dns-batch", async c => { const n = [...new Set((c.req.query("names") || "").split(",").map(x => x.trim().toLowerCase().replace(/\.$/, "")).filter(Boolean))];
+  if (!n.length || n.length > 12) return bad(c, "names must be a comma list of 1-12 domain names"); const badN = n.find(x => !isDomain(x)); if (badN) return bad(c, "invalid domain name: " + badN.slice(0, 80));
+  const ALLOWED = ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "CAA", "SOA"], t = [...new Set((c.req.query("types") || "").toUpperCase().split(",").map(x => x.trim()).filter(Boolean))];
+  if (t.some(x => !ALLOWED.includes(x))) return bad(c, "types must be a comma list of " + ALLOWED.join(","));
+  const types = t.length ? t : ["A", "AAAA", "MX", "NS"]; if (n.length * types.length > 48) return bad(c, `names x types must be <= 48 (got ${n.length} x ${types.length})`);
+  const r = await dnsBatch(n, types); if (r.results.every(x => x.error)) return c.json({ error: "upstream DNS-over-HTTPS temporarily unavailable, please retry (not charged)" }, 503); return c.json(r); });
+api.get("/v1/domain/ssl", async c => { const d = (c.req.query("host") || "").trim().replace(/\.$/, ""); if (!isDomain(d)) return bad(c, "host must be a valid host name"); const r = await sslCheck(d); if (r.https?.error && r.ctError) return c.json({ error: "could not reach the host or the Certificate Transparency logs, please retry (not charged)" }, 503); return c.json(r); });
+api.get("/v1/domain/overview", async c => { const d = (c.req.query("domain") || "").trim().replace(/\.$/, ""); if (!isDomain(d)) return bad(c, "domain must be a valid domain name"); const r = await domainOverview(d); if (r.dns?.error && r.email?.error) return c.json({ error: "upstream DNS-over-HTTPS temporarily unavailable, please retry (not charged)" }, 503); return c.json(r); });
 api.get("/v1/web/security-headers", async c => { const u = (c.req.query("url") || "").trim(); if (!u || u.length > 4000) return bad(c, "url is required (max 4000 chars)");
   try { return c.json(await headersAudit(u)); } catch (e) { return c.json({ error: "could not fetch: " + String(e.message).slice(0, 120) }, 422); } });
 api.get("/v1/x402/preflight", async c => { const u = (c.req.query("url") || "").trim(), m = (c.req.query("method") || "GET").toUpperCase(); if (!/^https?:\/\//.test(u) || u.length > 4000) return bad(c, "url must be an http(s) URL (max 4000 chars)"); if (!["GET", "POST"].includes(m)) return bad(c, "method must be GET or POST");
