@@ -7,9 +7,10 @@ import { DurableObject } from "cloudflare:workers";
 // Demand log: one row per /v1/ request (time, method, path, status, paid header present, short user agent). No IPs, no query values.
 export class ReqLog extends DurableObject {
   constructor(ctx, env) { super(ctx, env); this.sql = ctx.storage.sql;
-    this.sql.exec("CREATE TABLE IF NOT EXISTS r (ts INTEGER, m TEXT, p TEXT, st INTEGER, paid INTEGER, ua TEXT)"); }
+    this.sql.exec("CREATE TABLE IF NOT EXISTS r (ts INTEGER, m TEXT, p TEXT, st INTEGER, paid INTEGER, ua TEXT)");
+    this.sql.exec("CREATE INDEX IF NOT EXISTS r_ts ON r(ts)"); } // index: the old unindexed DELETE per insert scanned the whole table -> hit the free-tier rows-read cap (s57)
   add(row) { this.sql.exec("INSERT INTO r VALUES (?,?,?,?,?,?)", row.ts, row.m, row.p, row.st, row.paid, row.ua);
-    this.sql.exec("DELETE FROM r WHERE ts < ?", Date.now() - 45 * 864e5); }
+    if (Math.random() < 0.01) this.sql.exec("DELETE FROM r WHERE ts < ?", Date.now() - 45 * 864e5); }
   stats(hours) { const since = Date.now() - hours * 36e5;
     return { byRoute: this.sql.exec("SELECT p, st, paid, COUNT(*) n FROM r WHERE ts>=? GROUP BY p, st, paid ORDER BY n DESC", since).toArray(),
       byUa: this.sql.exec("SELECT ua, COUNT(*) n FROM r WHERE ts>=? GROUP BY ua ORDER BY n DESC LIMIT 30", since).toArray(),
@@ -28,7 +29,8 @@ export default {
     const u = new URL(req.url);
     if (u.pathname === "/_stats") {
       if (!env.STATS_KEY || u.searchParams.get("k") !== env.STATS_KEY) return new Response("not found", { status: 404 });
-      return Response.json(await logStub(env).stats(Number(u.searchParams.get("h")) || 24));
+      try { return Response.json(await logStub(env).stats(Number(u.searchParams.get("h")) || 24)); }
+      catch (e) { return Response.json({ error: String(e?.message || e).slice(0, 300) }, { status: 500 }); }
     }
     const res = await app.fetch(req, env, ctx);
     if (u.pathname.startsWith("/v1/") && env.REQLOG) {
