@@ -323,6 +323,11 @@ api.get("/v1/web/extract", async c => {
   try { return c.json(await extract(u, max)); } catch (e) { return bad(c, e.message); }
 });
 app.route("/", api);
+// s70: wrong method on a known paid route -> 405 + Allow + hint (a crawler POSTed to GET routes and got a bare 404).
+app.notFound(c => { const p = new URL(c.req.url).pathname, k = Object.keys(routes).find(r => r.split(" ")[1] === p);
+  if (k) { const m = k.split(" ")[0], ex = routes[k].extensions?.bazaar?.info?.input || {};
+    return c.json({ error: `method ${c.req.method} not allowed on ${p}; use ${m}`, allow: m, example: m === "GET" ? p + "?" + new URLSearchParams(ex.queryParams || {}).toString() : { body: ex.body || {} }, docs: new URL(c.req.url).origin + "/openapi.json" }, 405, { allow: m }); }
+  return c.json({ error: "not found", docs: new URL(c.req.url).origin + "/openapi.json", endpoints: new URL(c.req.url).origin + "/.well-known/x402" }, 404); });
 // Paid MCP server (x402 over MCP transport; never an HTTP 402).
 mountMcp(app, { routes, api, resourceServer, noPay: env.TEST_NO_PAY === "1" && NETWORK === "eip155:84532" });
 // FREE samples: the real handler run on each endpoint's documented example input, cached 15 min per isolate (so it can't be used as a free API).
