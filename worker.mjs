@@ -14,7 +14,8 @@ export class ReqLog extends DurableObject {
   stats(hours) { const since = Date.now() - hours * 36e5;
     return { byRoute: this.sql.exec("SELECT p, st, paid, COUNT(*) n FROM r WHERE ts>=? GROUP BY p, st, paid ORDER BY n DESC", since).toArray(),
       byUa: this.sql.exec("SELECT ua, COUNT(*) n FROM r WHERE ts>=? GROUP BY ua ORDER BY n DESC LIMIT 30", since).toArray(),
-      last: this.sql.exec("SELECT ts, m, p, st, paid, ua FROM r ORDER BY ts DESC LIMIT 40").toArray() }; }
+      last: this.sql.exec("SELECT ts, m, p, st, paid, ua FROM r ORDER BY ts DESC LIMIT 40").toArray(),
+      paidRows: this.sql.exec("SELECT ts, m, p, st, ua FROM r WHERE paid=1 AND ts>=? ORDER BY ts DESC LIMIT 40", since).toArray() }; }
 }
 const logStub = env => env.REQLOG?.get(env.REQLOG.idFromName("main"));
 let app, ready = false;
@@ -36,6 +37,9 @@ export default {
     if (u.pathname.startsWith("/v1/") && env.REQLOG) {
       const row = { ts: Date.now(), m: req.method, p: u.pathname.slice(0, 80), st: res.status,
         paid: req.headers.has("payment-signature") || req.headers.has("x-payment") ? 1 : 0, ua: (req.headers.get("user-agent") || "-").slice(0, 60) };
+      if (row.paid && res.status === 402) { // s71: record WHY a payment was rejected (9 paid-header 402s on dns in 24 h)
+        let er = ""; try { const h = res.headers.get("payment-required") || res.headers.get("x-payment-required"); if (h) er = JSON.parse(atob(h)).error || ""; if (!er) er = (await res.clone().json()).error || ""; } catch (e) { er = er || "unparsed"; }
+        row.ua = row.ua.slice(0, 40) + " |E " + String(er).slice(0, 120); }
       ctx.waitUntil(logStub(env).add(row).catch(() => {}));
     }
     return res;
